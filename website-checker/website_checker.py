@@ -6,10 +6,17 @@ import datetime
 from datetime import timedelta
 
 chunkSize=1
+riskStatuses = ('malicious','suspicious','phishing','malware')
 
 def create_connection():
-    conn = sqlite3.connect("localDB")
-    query = "create table if not exists sites(site varchar(256), lastCheck datetime, lastResult varchar(10))"
+    conn = sqlite3.connect("localDB",
+        detect_types=sqlite3.PARSE_DECLTYPES |
+        sqlite3.PARSE_COLNAMES)
+    query = "create table if not exists sites(site varchar(256) primary key ON CONFLICT REPLACE, lastCheck datetime, lastResult varchar(10))"
+    conn.cursor().execute(query)
+    query = "create table if not exists siteCategories(site varchar(256), category varchar(256), categoryCounter int)"
+    conn.cursor().execute(query)
+    query = "create table if not exists siteVotes(site varchar(256), vote varchar(256), voteCounter int)"
     conn.cursor().execute(query)
     return conn
 
@@ -22,7 +29,6 @@ def getResultsFromApi(site):
 
     response = requests.get('https://www.virustotal.com/api/v3/search', headers=headers, params=params)
     response_dict = (json.loads(response.text))
-    print(params)
     results = response_dict["data"][0]["attributes"]["last_analysis_results"]
     statuses = {}
     categories = {}
@@ -32,10 +38,12 @@ def getResultsFromApi(site):
         else:
             statuses[results[result]["result"]]=0
 
-        if results[result]["category"] in categories:
-            categories[results[result]["category"]]+=1
+    results = response_dict["data"][0]["attributes"]["categories"]
+    for result in results:
+        if results[result] in categories:
+            categories[results[result]]+=1
         else:
-            categories[results[result]["category"]]=0
+            categories[results[result]]=1
         
     site_results = {
         "site":site,
@@ -44,24 +52,39 @@ def getResultsFromApi(site):
         }
     return site_results
 
-def saveResultToDB(conn,newData,newRow):
-    if newRow==0:
-        query = "update sites set lastCheck=now(), lastResult=? where site=?"
-    else:
-        query = "insert into sites(lastResult,site,lastCheck) values(?,DATETIME('now'),?)"
+def saveResultToDB(conn,newData):
+    votes = ""
+    categories = ""
+    query = "insert into sites(lastResult,site,lastCheck) \
+            values(?,?,DATETIME('now'))"
     finalResult = "clean"
-    if "malicious" in newData["votes"]:
-        if newData["votes"]["malicious"]>1:
+    for vote in newData["votes"]:
+        if votes=="":
+            votes = "('"+newData["site"]+"','"+vote+"',"+str(newData["votes"][vote])+")"
+        else:
+            votes += ",('"+newData["site"]+"','"+vote+"',"+str(newData["votes"][vote])+")"
+        if vote in riskStatuses and newData["votes"][vote]>1:
             finalResult="risk"
-    if "suspicious" in newData["votes"]:
-        if newData["votes"]["suspicious"]>1:
-            finalResult="risk"
+
+    for category in newData["categories"]:
+        if categories=="":
+            categories = "('"+newData["site"]+"','"+category+"',"+str(newData["categories"][category])+")"
+        else:
+            categories += ",('"+newData["site"]+"','"+category+"',"+str(newData["categories"][category])+")"
+
     curr = conn.cursor()
     curr.execute(query,(finalResult,newData["site"]))
+    query = "delete from siteCategories where site=?"
+    curr.execute(query,(newData["site"],))
+    query = query = "insert into siteCategories values "+categories
+    curr.execute(query)
+    query = "delete from siteVotes where site=?"
+    curr.execute(query,(newData["site"],))
+    query = "insert into siteVotes values "+votes
+    curr.execute(query)
     conn.commit()
-    print(query)
 
-def doSomething(conn,chunk):
+def processChunk(conn,chunk):
     site = chunk[0]
     query = "select lastCheck from sites where site=?"
     curr = conn.cursor()
@@ -69,11 +92,11 @@ def doSomething(conn,chunk):
     rows = curr.fetchall()
     if len(rows)==0:
         site_result = getResultsFromApi(site)
-        saveResultToDB(conn,site_result,1)
+        saveResultToDB(conn,site_result)
     for row in rows:
-        if row[0]<datetime.datetime.now()+timedelta(minutes=-30):
+        if datetime.datetime.strptime(row[0],"%Y-%m-%d %H:%M:%S")<datetime.datetime.utcnow()-timedelta(minutes=1):
             site_result = getResultsFromApi(site)
-            saveResultToDB(conn,site_result,0)
+            saveResultToDB(conn,site_result)
 
 def getUrlsFromFile(conn,filePath):
     iterator = 0
@@ -83,11 +106,23 @@ def getUrlsFromFile(conn,filePath):
             chunk.append(line.replace("\n",""))
             iterator+=1
             if iterator==chunkSize:
-                doSomething(conn,chunk)
+                processChunk(conn,chunk)
                 iterator=0
                 chunk=[]
     if iterator>0:
-        doSomething(conn,chunk)
+        processChunk(conn,chunk)
 
 conn = create_connection()
 getUrlsFromFile(conn,"/Users/muligolan/elementor/website-checker/request1.csv")
+query = "select * from sites"
+crr = conn.cursor()
+for r in crr.execute(query):
+    print(r)
+query = "select * from siteCategories"
+crr = conn.cursor()
+for r in crr.execute(query):
+    print(r)
+query = "select * from siteVotes"
+crr = conn.cursor()
+for r in crr.execute(query):
+    print(r)
