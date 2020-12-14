@@ -6,7 +6,7 @@ import datetime
 from datetime import timedelta
 
 chunkSize=1
-riskStatuses = ('malicious','suspicious','phishing','malware')
+riskStatuses = ('malicious','phishing','malware')
 
 def create_connection():
     conn = sqlite3.connect("localDB",
@@ -57,7 +57,7 @@ def saveResultToDB(conn,newData):
     categories = ""
     query = "insert into sites(lastResult,site,lastCheck) \
             values(?,?,DATETIME('now'))"
-    finalResult = "clean"
+    finalResult = "safe"
     for vote in newData["votes"]:
         if votes=="":
             votes = "('"+newData["site"]+"','"+vote+"',"+str(newData["votes"][vote])+")"
@@ -114,6 +114,8 @@ def getUrlsFromFile(conn,filePath):
 
 conn = create_connection()
 getUrlsFromFile(conn,"/Users/muligolan/elementor/website-checker/request1.csv")
+
+#printing results, not part of the solution
 query = "select * from sites"
 crr = conn.cursor()
 for r in crr.execute(query):
