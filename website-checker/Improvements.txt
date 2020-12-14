@@ -1,0 +1,3 @@
+1. working with chunks (couldn't managed to make it work in the specific timeframe).
+2. working with key value storage that will hold the last time we checked the result for each website (website is the key).
+3. adding auto number column to sites table and add it as a foreign key in the other tables.
