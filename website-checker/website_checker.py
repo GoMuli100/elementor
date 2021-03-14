@@ -22,7 +22,7 @@ def create_connection():
 
 def getResultsFromApi(site):
     headers = {
-        'X-Apikey': '69fb91a5dd64792bbeac56741499875b9faa35ce79ec924bb344e29a625531e7',
+        'X-Apikey': '{PUT_YOUR_API_KEY_HERE}',
     }
 
     params = (('query', site),)
